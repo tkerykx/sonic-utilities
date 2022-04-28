@@ -32,14 +32,19 @@ def profile(profile):
         chip_family = json.load(file)['chip_list'][0]['chip_family'].lower()
     
     # Check if profile is supported
-    if chip_family == 'tofino' and profile[0] == 'y' or \
-        chip_family == 'tofino2' and profile[0] == 'x':
+    if chip_family == 'tofino' and profile[0] != 'x' or \
+        chip_family == 'tofino2' and profile[0] != 'y' or \
+        chip_family == 'tofino3' and profile[0] != 'y' or \
+        chip_family == 'tofino3' and profile[0] != 'z':
         click.echo('Specified profile is unsupported on the system')
         raise click.Abort()
-    
+
     # Check if profile exists
     completed_process = subprocess.run(['docker', 'exec', '-it', 'syncd',
         'test', '-d', '/opt/bfn/install_' + profile + '_profile'])
+    if completed_process.returncode != 0:
+        completed_process = subprocess.run(['docker', 'exec', '-it', 'syncd',
+        'test', '-d', '/opt/bfn/install_' + profile + chip_family])
     if completed_process.returncode != 0:
         click.echo('No profile with the provided name found')
         raise click.Abort()

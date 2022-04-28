@@ -26,20 +26,29 @@ def profile():
     # Print current profile
     click.echo('Current profile: ', nl=False)
     subprocess.run('docker exec -it syncd readlink /opt/bfn/install | sed '
-        r's/install_\\\(.\*\\\)_profile/\\1/', check=True, shell=True)
-    
-    # Exclude current and unsupported profiles
+        r's/install_\\\(.\*\\\)_profile/\\1/'
+        r' | sed s/install_\\\(.\*\\\)_tofino\\\(.\*\\\)/\\1/', check=True, shell=True)
+
     opts = ''
+    # Check if profile naming format contains tofino family information 
+    suffix = '_profile'
+    if '_tofino' in subprocess.check_output(['docker', 'exec', '-it', 'syncd', 'ls', '/opt/bfn']).strip().decode():
+        suffix = '_' + chip_family
+
+    # Check supported profiles 
     if chip_family == 'tofino':
-        opts = r'\! -name install_y\*_profile '
+        opts = r' -name install_x\*' + suffix
     elif chip_family == 'tofino2':
-        opts = r'\! -name install_x\*_profile '
-    
+        opts = r' -name install_y\*' + suffix
+    elif chip_family == 'tofino3':
+        opts = r' -name install_y\*' + suffix + r' -o -name install_z\*' + suffix
+
     # Print profile list
     click.echo('Available profile(s):')
     subprocess.run('docker exec -it syncd find /opt/bfn -mindepth 1 '
-        r'-maxdepth 1 -type d -name install_\*_profile ' + opts + '| sed '
-        r's%/opt/bfn/install_\\\(.\*\\\)_profile%\\1%', shell=True)
+        r'-maxdepth 1 -type d,l ' + opts + '| sed '
+        r's%/opt/bfn/install_\\\(.\*\\\)_profile%\\1%'
+        r' | sed s%/opt/bfn/install_\\\(.\*\\\)_tofino\\\(.\*\\\)%\\1%', shell=True)
 
 def register(cli):
     version_info = device_info.get_sonic_version_info()
