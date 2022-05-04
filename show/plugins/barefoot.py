@@ -22,26 +22,26 @@ def profile():
     hwsku_dir = device_info.get_path_to_hwsku_dir()
     with open(hwsku_dir + '/switch-tna-sai.conf') as file:
         chip_family = json.load(file)['chip_list'][0]['chip_family'].lower()
-    
+
     # Print current profile
     click.echo('Current profile: ', nl=False)
     subprocess.run('docker exec -it syncd readlink /opt/bfn/install | sed '
         r's/install_\\\(.\*\\\)_profile/\\1/'
         r' | sed s/install_\\\(.\*\\\)_tofino\\\(.\*\\\)/\\1/', check=True, shell=True)
 
-    opts = ''
     # Check if profile naming format contains tofino family information 
     suffix = '_profile'
     if '_tofino' in subprocess.check_output(['docker', 'exec', '-it', 'syncd', 'ls', '/opt/bfn']).strip().decode():
         suffix = '_' + chip_family
 
     # Check supported profiles 
+    opts = ''
     if chip_family == 'tofino':
         opts = r' -name install_x\*' + suffix
     elif chip_family == 'tofino2':
         opts = r' -name install_y\*' + suffix
-    elif chip_family == 'tofino3':
-        opts = r' -name install_y\*' + suffix + r' -o -name install_z\*' + suffix
+    else:
+        opts = r' -name \*' + suffix
 
     # Print profile list
     click.echo('Available profile(s):')
