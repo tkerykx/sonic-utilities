@@ -57,11 +57,10 @@ def profile(profile):
     config_db = ConfigDBConnector()
     config_db.connect()
     if no_arch_information:
-        profile_val = {'p4_profile': profile + '_profile'}
+        profile += '_profile'
     else:
-        profile_val = {'p4_profile': profile + '_' + chip_family}
-    config_db.mod_entry('DEVICE_METADATA', 'localhost',
-            profile_val)
+        profile = profile + '_' + chip_family
+    config_db.mod_entry('DEVICE_METADATA', 'localhost', {'p4_profile': profile})
 
     subprocess.run(['systemctl', 'restart', 'swss'], check=True)
 
