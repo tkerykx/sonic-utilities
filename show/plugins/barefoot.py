@@ -30,9 +30,8 @@ def profile():
         r' | sed s/install_\\\(.\*\\\)_tofino\\\(.\*\\\)/\\1/', check=True, shell=True)
 
     # Check if profile naming format contains tofino family information 
-    suffix = '_profile'
-    if '_tofino' in subprocess.check_output(['docker', 'exec', '-it', 'syncd', 'ls', '/opt/bfn']).strip().decode():
-        suffix = '_' + chip_family
+    output = subprocess.check_output(['docker', 'exec', '-it', 'syncd', 'ls', '/opt/bfn']).strip().decode()
+    suffix = '_' + chip_family if '_tofino' in output else '_profile'
 
     # Check supported profiles 
     opts = ''
