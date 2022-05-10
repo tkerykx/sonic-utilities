@@ -11,6 +11,6 @@ class TestShowBarefoot(object):
         return_code, output = get_result_and_return_code("show platform barefoot profile")
         assert return_code == 127
         opts = 'None'
-        if (output.contains("_tofino")):
+        if "_tofino" in output:
             opts = output
         print(opts)
