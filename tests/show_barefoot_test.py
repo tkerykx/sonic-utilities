@@ -25,8 +25,13 @@ class TestShowPlatformBarefoot(object):
         with the appropriate option(s). 
     """
     def test_barefoot(self):
-        with mock.patch('utilities_common.cli.run_command') as mock_run_command:
-            CliRunner().invoke(show.cli.commands['platform'].commands['barefoot'], ['profile'])
+        #with mock.patch('utilities_common.cli.run_command') as mock_run_command:
+        #    CliRunner().invoke(show.cli.commands['platform'].commands['barefoot'], ['profile'])
         #assert mock_run_command.call_count == 1
-        assert mock_run_command.call_count == 0
+        runner = CliRunner()
+        expected_output = "Current profile:"
+        result = runner.invoke(show.cli.commands['platform'].commands['barefoot'], ['profile'])
+        #assert mock_run_command.call_count == 0
+        assert result.exit_code == 0
+        assert result.output == expected_output
         #mock_run_command.assert_called_with('show platform barefoot profile', display_cmd=False)
