@@ -27,6 +27,6 @@ class TestShowPlatformBarefoot(object):
     """
     def test_barefoot(self):
         with mock.patch('utilities_common.cli.run_command') as mock_run_command:
-            CliRunner().invoke(show.cli.commands['platform'].commands['barefoot'], [])
+            CliRunner().invoke(show.cli.commands['platform'].commands['barefoot'].commands['profile'], [])
         assert mock_run_command.call_count == 1
         mock_run_command.assert_called_with('show platform barefoot', display_cmd=False)
