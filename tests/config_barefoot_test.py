@@ -5,8 +5,8 @@ from unittest import mock
 
 import pytest
 from click.testing import CliRunner
-import show.plugins.barefoot as bf
-import show.main as show_main
+import config.plugins.barefoot as bf
+import config.main as config_main
 
 @pytest.fixture(scope='class')
 def config_env():
@@ -23,12 +23,10 @@ class TestConfigPlatformBarefoot(object):
     
     def test_profile(self):
         runner = CliRunner()
-        #for Azure test
-        expected_output = "Current profile: default\n"
-        
+        expected_output = "Swss service will be restarted, continue? [y/N]: \nAborted!\n"
         #result = runner.invoke(show.cli.commands['platform'].commands['barefoot'], ['profile'])
         #result = runner.invoke(show.cli.commands['platform'].commands['barefoot'].commands['profile'])
-        result = runner.invoke(bf.barefoot.commands['profile'], [])
+        result = runner.invoke(bf.barefoot.commands['profile'], ['default'])
         #assert mock_run_command.call_count == 0
         #assert result.exit_code == 2
         #assert result.exit_code == 0
@@ -36,8 +34,6 @@ class TestConfigPlatformBarefoot(object):
         print("result.output:", result.output)
         assert result.output == expected_output
         #mock_run_command.assert_called_with('show platform barefoot profile', display_cmd=False)
-
+    
     def test_register(self):
-        bf.register(show_main.cli)
-
-
+        bf.register(config_main.config)

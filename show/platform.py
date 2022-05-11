@@ -159,5 +159,5 @@ def firmware(args):
 @platform.command()
 def barefoot():
     """Show Barefoot profile information"""
-    cmd = 'barefoot'
+    cmd = "barefoot profile"
     clicommon.run_command(cmd)
