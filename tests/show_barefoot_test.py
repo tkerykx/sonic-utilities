@@ -30,7 +30,8 @@ class TestShowPlatformBarefoot(object):
         #assert mock_run_command.call_count == 1
         runner = CliRunner()
         expected_output = "Current profile:"
-        result = runner.invoke(show.cli.commands['platform'].commands['barefoot'], ['profile'])
+        #result = runner.invoke(show.cli.commands['platform'].commands['barefoot'], ['profile'])
+        result = runner.invoke(show.cli.commands['platform'].commands['barefoot'].commands['profile'])
         #assert mock_run_command.call_count == 0
         #assert result.exit_code == 2
         print("result.exit_code:", result.exit_code)
