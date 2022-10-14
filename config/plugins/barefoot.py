@@ -32,23 +32,33 @@ def profile(profile):
         chip_family = json.load(file)['chip_list'][0]['chip_family'].lower()
     
     # Check if profile is supported
-    if chip_family == 'tofino' and profile[0] == 'y' or \
-        chip_family == 'tofino2' and profile[0] == 'x':
+    if chip_family == 'tofino' and profile[0] != 'x' or \
+        chip_family == 'tofino2' and profile[0] != 'y':
         click.echo('Specified profile is unsupported on the system')
         raise click.Abort()
-    
-    # Check if profile exists
+
+    # Check if profile <profile_name>_<chip_family> exists
+    no_arch_information = False
     completed_process = subprocess.run(['docker', 'exec', '-it', 'syncd',
-        'test', '-d', '/opt/bfn/install_' + profile + '_profile'])
+        'test', '-d', '/opt/bfn/install_' + profile + '_' + chip_family])
+
+    # Otherwise, check if profile <profile_name>_profile exists (only for tofino and tofino2)
     if completed_process.returncode != 0:
-        click.echo('No profile with the provided name found')
+        if chip_family == 'tofino' or chip_family == 'tofino2':
+            completed_process = subprocess.run(['docker', 'exec', '-it', 'syncd',
+            'test', '-d', '/opt/bfn/install_' + profile + '_profile'])
+            no_arch_information = True
+
+    if completed_process.returncode != 0:
+        click.echo('No profile with the provided name found for {}'.format(chip_family))
         raise click.Abort()
     
     # Update configuration
     config_db = ConfigDBConnector()
     config_db.connect()
-    config_db.mod_entry('DEVICE_METADATA', 'localhost',
-        {'p4_profile': profile + '_profile'})
+    profile += '_profile' if no_arch_information else '_' + chip_family
+    config_db.mod_entry('DEVICE_METADATA', 'localhost', {'p4_profile': profile})
+
     subprocess.run(['systemctl', 'restart', 'swss'], check=True)
 
 def register(cli):
