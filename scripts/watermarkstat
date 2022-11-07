@@ -21,8 +21,16 @@ try:
         tests_path = os.path.join(modules_path, "tests")
         sys.path.insert(0, modules_path)
         sys.path.insert(0, tests_path)
-        import mock_tables.dbconnector
+        from mock_tables import dbconnector
 
+        if os.environ["WATERMARKSTAT_UNIT_TESTING"] == "1":
+            input_path = os.path.join(tests_path, "wm_input")
+            mock_db_path = os.path.join(input_path, "mock_db")
+
+            for mock_db in os.listdir(mock_db_path):
+                name, ext = os.path.splitext(mock_db)
+                if ext == ".json":
+                    dbconnector.dedicated_dbs[name.upper()] = os.path.join(mock_db_path, name)
 except KeyError:
     pass
 
@@ -201,23 +209,34 @@ class Watermarkstat(object):
 
         return pg_index
 
-    def build_header(self, wm_type):
+    def build_header(self, wm_type, counter_type):
         if wm_type is None:
             print("Header info is not available!", file=sys.stderr)
             sys.exit(1)
 
         self.header_list = ['Port']
         header_map = wm_type["obj_map"]
-        single_key = list(header_map.keys())[0]
-        header_len = len(header_map[single_key])
-        min_idx = sys.maxsize
 
-        for name, counter_oid in header_map[single_key].items():
-            curr_idx = int(wm_type["idx_func"](counter_oid))
-            min_idx = min(min_idx, curr_idx)
+        max_idx = 0
+        min_idx = sys.maxsize
+        for port in header_map.keys():
+            for element in header_map[port].keys():
+                element_idx = int(element.split(':')[1])
+                if element_idx > max_idx:
+                    max_idx = element_idx
+                if min_idx > element_idx:
+                    min_idx = element_idx
+
+        if min_idx == sys.maxsize:
+            if counter_type != 'q_shared_multi':
+                print("Object map is empty!", file=sys.stderr)
+                sys.exit(1)
+            else:
+                print("Object map from the COUNTERS_DB is empty because the multicast queues are not configured in the CONFIG_DB!")
+                sys.exit(0)
 
         self.min_idx = min_idx
-        self.header_list += ["{}{}".format(wm_type["header_prefix"], idx) for idx in range(self.min_idx, self.min_idx + header_len)]
+        self.header_list += ["{}{}".format(wm_type["header_prefix"], idx) for idx in range(self.min_idx, max_idx + 1)]
 
     def get_counters(self, table_prefix, port_obj, idx_func, watermark):
         """
@@ -257,7 +276,7 @@ class Watermarkstat(object):
                     data = STATUS_NA
                 table.append((buf_pool, data))
         else:
-            self.build_header(type)
+            self.build_header(type, key)
             # Get stat for each port
             for port in natsorted(self.counter_port_name_map):
                 row_data = list()

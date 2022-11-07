@@ -28,6 +28,7 @@ def profile(profile):
     
     # Get chip family
     hwsku_dir = device_info.get_path_to_hwsku_dir()
+    chip_family = ""
     with open(hwsku_dir + '/switch-tna-sai.conf') as file:
         chip_family = json.load(file)['chip_list'][0]['chip_family'].lower()
     
