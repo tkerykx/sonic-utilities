@@ -697,17 +697,25 @@ def storm_control_set_entry(port_name, kbps, storm_type, namespace):
         return False
 
     #Validate kbps value
-    config_db = ConfigDBConnector()
+    config_db = ValidatedConfigDBConnector(ConfigDBConnector())
     config_db.connect()
     key = port_name + '|' + storm_type
     entry = config_db.get_entry('PORT_STORM_CONTROL', key)
 
     if len(entry) == 0:
-        config_db.set_entry('PORT_STORM_CONTROL', key, {'kbps':kbps})
+        try:
+            config_db.set_entry('PORT_STORM_CONTROL', key, {'kbps':kbps})
+        except ValueError as e:
+            ctx = click.get_current_context()
+            ctx.fail("Invalid ConfigDB. Error: {}".format(e))
     else:
         kbps_value = int(entry.get('kbps',0))
         if kbps_value != kbps:
-            config_db.mod_entry('PORT_STORM_CONTROL', key, {'kbps':kbps})
+            try:
+                config_db.mod_entry('PORT_STORM_CONTROL', key, {'kbps':kbps})
+            except ValueError as e:
+                ctx = click.get_current_context()
+                ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
     return True
 
@@ -717,7 +725,7 @@ def storm_control_delete_entry(port_name, storm_type):
     if storm_control_interface_validate(port_name) is False:
         return False
 
-    config_db = ConfigDBConnector()
+    config_db = ValidatedConfigDBConnector(ConfigDBConnector())
     config_db.connect()
     key = port_name + '|' + storm_type
     entry = config_db.get_entry('PORT_STORM_CONTROL', key)
@@ -726,7 +734,11 @@ def storm_control_delete_entry(port_name, storm_type):
         click.echo("%s storm-control not enabled on interface %s" %(storm_type, port_name))
         return False
     else:
-        config_db.set_entry('PORT_STORM_CONTROL', key, None)
+        try:
+            config_db.set_entry('PORT_STORM_CONTROL', key, None)
+        except JsonPatchConflict as e:
+            ctx = click.get_current_context()
+            ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
     return True
 
@@ -1932,11 +1944,15 @@ def override_config_db(config_db, config_input):
 @click.argument('new_hostname', metavar='<new_hostname>', required=True)
 def hostname(new_hostname):
     """Change device hostname without impacting the traffic."""
-
-    config_db = ConfigDBConnector()
+    config_db = ValidatedConfigDBConnector(ConfigDBConnector())
     config_db.connect()
-    config_db.mod_entry(swsscommon.CFG_DEVICE_METADATA_TABLE_NAME, 'localhost',
-                        {'hostname': new_hostname})
+    try:
+        config_db.mod_entry(swsscommon.CFG_DEVICE_METADATA_TABLE_NAME, 'localhost',
+                            {'hostname': new_hostname})
+    except ValueError as e:
+        ctx = click.get_current_context()
+        ctx.fail("Failed to write new hostname to ConfigDB. Error: {}".format(e))
+
 
     click.echo('Please note loaded setting will be lost after system reboot. To'
                ' preserve setting, run `config save`.')
@@ -1954,17 +1970,22 @@ def synchronous_mode(sync_mode):
                config reload -y \n
             2. systemctl restart swss
     """
-
-    if sync_mode == 'enable' or sync_mode == 'disable':
-        config_db = ConfigDBConnector()
-        config_db.connect()
+    if ADHOC_VALIDATION:
+        if sync_mode != 'enable' and sync_mode != 'disable':
+            raise click.BadParameter("Error: Invalid argument %s, expect either enable or disable" % sync_mode)
+        
+    config_db = ValidatedConfigDBConnector(ConfigDBConnector())
+    config_db.connect()
+    try:
         config_db.mod_entry('DEVICE_METADATA' , 'localhost', {"synchronous_mode" : sync_mode})
-        click.echo("""Wrote %s synchronous mode into CONFIG_DB, swss restart required to apply the configuration: \n
+    except ValueError as e:
+        ctx = click.get_current_context()
+        ctx.fail("Error: Invalid argument %s, expect either enable or disable" % sync_mode)
+    
+    click.echo("""Wrote %s synchronous mode into CONFIG_DB, swss restart required to apply the configuration: \n
     Option 1. config save -y \n
               config reload -y \n
     Option 2. systemctl restart swss""" % sync_mode)
-    else:
-        raise click.BadParameter("Error: Invalid argument %s, expect either enable or disable" % sync_mode)
 
 #
 # 'yang_config_validation' command ('config yang_config_validation ...')
@@ -1972,14 +1993,19 @@ def synchronous_mode(sync_mode):
 @config.command('yang_config_validation')
 @click.argument('yang_config_validation', metavar='<enable|disable>', required=True)
 def yang_config_validation(yang_config_validation):
-    # Enable or disable YANG validation on updates to ConfigDB
-    if yang_config_validation == 'enable' or yang_config_validation == 'disable':
-        config_db = ConfigDBConnector()
-        config_db.connect()
+    if ADHOC_VALIDATION:
+        if yang_config_validation != 'enable' and yang_config_validation != 'disable':
+            raise click.BadParameter("Error: Invalid argument %s, expect either enable or disable" % yang_config_validation)
+
+    config_db = ValidatedConfigDBConnector(ConfigDBConnector())
+    config_db.connect()
+    try:
         config_db.mod_entry('DEVICE_METADATA', 'localhost', {"yang_config_validation": yang_config_validation})
-        click.echo("""Wrote %s yang config validation into CONFIG_DB""" % yang_config_validation)
-    else:
-        raise click.BadParameter("Error: Invalid argument %s, expect either enable or disable" % yang_config_validation)
+    except ValueError as e:
+        ctx = click.get_current_context()
+        ctx.fail("Error: Invalid argument %s, expect either enable or disable" % yang_config_validation)
+
+    click.echo("""Wrote %s yang config validation into CONFIG_DB""" % yang_config_validation)
 
 #
 # 'portchannel' group ('config portchannel ...')
@@ -3181,16 +3207,24 @@ def snmp_user_secret_check(snmp_secret):
 def add_community(db, community, string_type):
     """ Add snmp community string"""
     string_type = string_type.upper()
-    if not is_valid_community_type(string_type):
-        sys.exit(1)
-    if not snmp_community_secret_check(community):
-        sys.exit(2)
-    snmp_communities = db.cfgdb.get_table("SNMP_COMMUNITY")
-    if community in snmp_communities:
-        click.echo("SNMP community {} is already configured".format(community))
-        sys.exit(3)
-    db.cfgdb.set_entry('SNMP_COMMUNITY', community, {'TYPE': string_type})
-    click.echo("SNMP community {} added to configuration".format(community))
+    if ADHOC_VALIDATION:
+        if not is_valid_community_type(string_type):
+            sys.exit(1)
+        if not snmp_community_secret_check(community):
+            sys.exit(2)
+        snmp_communities = db.cfgdb.get_table("SNMP_COMMUNITY")
+        if community in snmp_communities:
+            click.echo("SNMP community {} is already configured".format(community))
+            sys.exit(3)
+
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
+    try:
+        config_db.set_entry('SNMP_COMMUNITY', community, {'TYPE': string_type})
+        click.echo("SNMP community {} added to configuration".format(community))
+    except ValueError as e:
+        ctx = click.get_current_context()
+        ctx.fail("SNMP community configuration failed. Error: {}".format(e))
+
     try:
         click.echo("Restarting SNMP service...")
         clicommon.run_command("systemctl reset-failed snmp.service", display_cmd=False)
@@ -3205,20 +3239,27 @@ def add_community(db, community, string_type):
 @clicommon.pass_db
 def del_community(db, community):
     """ Delete snmp community string"""
-    snmp_communities = db.cfgdb.get_table("SNMP_COMMUNITY")
-    if community not in snmp_communities:
-        click.echo("SNMP community {} is not configured".format(community))
-        sys.exit(1)
-    else:
-        db.cfgdb.set_entry('SNMP_COMMUNITY', community, None)
+    if ADHOC_VALIDATION:
+        snmp_communities = db.cfgdb.get_table("SNMP_COMMUNITY")
+        if community not in snmp_communities:
+            click.echo("SNMP community {} is not configured".format(community))
+            sys.exit(1)
+    
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
+    try:
+        config_db.set_entry('SNMP_COMMUNITY', community, None)
         click.echo("SNMP community {} removed from configuration".format(community))
-        try:
-            click.echo("Restarting SNMP service...")
-            clicommon.run_command("systemctl reset-failed snmp.service", display_cmd=False)
-            clicommon.run_command("systemctl restart snmp.service", display_cmd=False)
-        except SystemExit as e:
-            click.echo("Restart service snmp failed with error {}".format(e))
-            raise click.Abort()
+    except JsonPatchConflict as e:
+        ctx = click.get_current_context()
+        ctx.fail("SNMP community {} is not configured. Error: {}".format(community, e))
+
+    try:
+        click.echo("Restarting SNMP service...")
+        clicommon.run_command("systemctl reset-failed snmp.service", display_cmd=False)
+        clicommon.run_command("systemctl restart snmp.service", display_cmd=False)
+    except SystemExit as e:
+        click.echo("Restart service snmp failed with error {}".format(e))
+        raise click.Abort()
 
 
 @community.command('replace')
@@ -3274,7 +3315,7 @@ def add_contact(db, contact, contact_email):
             click.echo("Contact already exists.  Use sudo config snmp contact modify instead")
             sys.exit(1)
         else:
-            db.cfgdb.set_entry('SNMP', 'CONTACT', {contact: contact_email})
+            db.cfgdb.set_entry('SNMP', 'CONTACT', {contact: contact_email}) # TODO: ERROR IN YANG MODEL. Contact name is not defined as key
             click.echo("Contact name {} and contact email {} have been added to "
                        "configuration".format(contact, contact_email))
             try:
@@ -3387,19 +3428,24 @@ def location(db):
 @clicommon.pass_db
 def add_location(db, location):
     """ Add snmp location"""
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     if isinstance(location, tuple):
         location = " ".join(location)
     elif isinstance(location, list):
         location = " ".join(location)
-    snmp = db.cfgdb.get_table("SNMP")
+    snmp = config_db.get_table("SNMP")
     try:
         if snmp['LOCATION']:
             click.echo("Location already exists")
             sys.exit(1)
     except KeyError:
         if "LOCATION" not in snmp.keys():
-            db.cfgdb.set_entry('SNMP', 'LOCATION', {'Location': location})
-            click.echo("SNMP Location {} has been added to configuration".format(location))
+            try:
+                config_db.set_entry('SNMP', 'LOCATION', {'Location': location})
+                click.echo("SNMP Location {} has been added to configuration".format(location))
+            except ValueError:
+                ctx = click.get_current_context()
+                ctx.fail("Failed to set SNMP location. Error: {}".format(e))
             try:
                 click.echo("Restarting SNMP service...")
                 clicommon.run_command("systemctl reset-failed snmp.service", display_cmd=False)
@@ -3414,6 +3460,7 @@ def add_location(db, location):
 @clicommon.pass_db
 def delete_location(db, location):
     """ Delete snmp location"""
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     if isinstance(location, tuple):
         location = " ".join(location)
     elif isinstance(location, list):
@@ -3421,8 +3468,12 @@ def delete_location(db, location):
     snmp = db.cfgdb.get_table("SNMP")
     try:
         if location == snmp['LOCATION']['Location']:
-            db.cfgdb.set_entry('SNMP', 'LOCATION', None)
-            click.echo("SNMP Location {} removed from configuration".format(location))
+            try:
+                config_db.set_entry('SNMP', 'LOCATION', None)
+                click.echo("SNMP Location {} removed from configuration".format(location))
+            except (ValueError, JsonPatchConflict) as e:
+                ctx = click.get_current_context()
+                ctx.fail("Failed to remove SNMP location from configuration. Error: {}".format(e))
             try:
                 click.echo("Restarting SNMP service...")
                 clicommon.run_command("systemctl reset-failed snmp.service", display_cmd=False)
@@ -3444,19 +3495,24 @@ def delete_location(db, location):
 @clicommon.pass_db
 def modify_location(db, location):
     """ Modify snmp location"""
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     if isinstance(location, tuple):
         location = " ".join(location)
     elif isinstance(location, list):
         location = " ".join(location)
-    snmp = db.cfgdb.get_table("SNMP")
+    snmp = config_db.get_table("SNMP")
     try:
         snmp_location = snmp['LOCATION']['Location']
         if location in snmp_location:
             click.echo("SNMP location {} already exists".format(location))
             sys.exit(1)
         else:
-            db.cfgdb.mod_entry('SNMP', 'LOCATION', {'Location': location})
-            click.echo("SNMP location {} modified in configuration".format(location))
+            try:
+                config_db.mod_entry('SNMP', 'LOCATION', {'Location': location})
+                click.echo("SNMP location {} modified in configuration".format(location))
+            except ValueError as e:
+                ctx = click.get_current_context()
+                ctx.fail("Failed to modify SNMP location. Error: {}".format(e))
             try:
                 click.echo("Restarting SNMP service...")
                 clicommon.run_command("systemctl reset-failed snmp.service", display_cmd=False)
@@ -4096,27 +4152,11 @@ def breakout(ctx, interface_name, mode, verbose, force_remove_dependencies, load
         click.secho("[ERROR] port_dict is None!", fg='red')
         raise click.Abort()
 
-    """ Special Case: Dont delete those ports  where the current mode and speed of the parent port
-                      remains unchanged to limit the traffic impact """
-
-    click.secho("\nAfter running Logic to limit the impact", fg="cyan", underline=True)
-    matched_items = [intf for intf in del_intf_dict if intf in add_intf_dict and del_intf_dict[intf] == add_intf_dict[intf]]
-
-    # Remove the interface which remains unchanged from both del_intf_dict and add_intf_dict
-    for item in matched_items:
-        del_intf_dict.pop(item)
-        add_intf_dict.pop(item)
-
     # validate all del_ports before calling breakOutPort
     for intf in del_intf_dict.keys():
         if not interface_name_is_valid(config_db, intf):
             click.secho("[ERROR] Interface name {} is invalid".format(intf))
             raise click.Abort()
-
-    click.secho("\nFinal list of ports to be deleted : \n {} \nFinal list of ports to be added :  \n {}".format(json.dumps(del_intf_dict, indent=4), json.dumps(add_intf_dict, indent=4), fg='green', blink=True))
-    if not add_intf_dict:
-        click.secho("[ERROR] add_intf_dict is None or empty! No interfaces are there to be added", fg='red')
-        raise click.Abort()
 
     port_dict = {}
     for intf in add_intf_dict:
@@ -4486,7 +4526,7 @@ def buffer_objects_map_check_legality(ctx, db, interface_name, input_map, is_new
 
 
 def update_buffer_object(db, interface_name, object_map, override_profile, is_pg, add=True):
-    config_db = db.cfgdb
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     ctx = click.get_current_context()
 
     # Check whether port is legal
@@ -4516,16 +4556,22 @@ def update_buffer_object(db, interface_name, object_map, override_profile, is_pg
         if is_pg:
             if not 'xoff' in profile_dict.keys() and 'size' in profile_dict.keys():
                 ctx.fail("Profile {} doesn't exist or isn't a lossless profile".format(override_profile))
-        config_db.set_entry(buffer_table, (interface_name, object_map), {"profile": override_profile})
+        try:
+            config_db.set_entry(buffer_table, (interface_name, object_map), {"profile": override_profile})
+        except ValueError as e:
+            ctx.fail("Invalid ConfigDB. Error: {}".format(e))
     else:
-        config_db.set_entry(buffer_table, (interface_name, object_map), {"profile": "NULL"})
+        try:
+            config_db.set_entry(buffer_table, (interface_name, object_map), {"profile": "NULL"})
+        except ValueError as e:
+            ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
     if is_pg:
         adjust_pfc_enable(ctx, db, interface_name, object_map, True)
 
 
 def remove_buffer_object_on_port(db, interface_name, buffer_object_map, is_pg=True):
-    config_db = db.cfgdb
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     ctx = click.get_current_context()
 
     # Check whether port is legal
@@ -4546,7 +4592,10 @@ def remove_buffer_object_on_port(db, interface_name, buffer_object_map, is_pg=Tr
                     ctx.fail("Lossy PG {} can't be removed".format(buffer_object_map))
                 else:
                     continue
-            config_db.set_entry(buffer_table, (interface_name, existing_buffer_object), None)
+            try:
+                config_db.set_entry(buffer_table, (interface_name, existing_buffer_object), None)
+            except JsonPatchConflict as e:
+                ctx.fail("Invalid ConfigDB. Error: {}".format(e))
             if is_pg:
                 adjust_pfc_enable(ctx, db, interface_name, buffer_object_map, False)
             removed = True
@@ -4559,7 +4608,7 @@ def remove_buffer_object_on_port(db, interface_name, buffer_object_map, is_pg=Tr
 
 
 def adjust_pfc_enable(ctx, db, interface_name, pg_map, add):
-    config_db = db.cfgdb
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
 
     # Fetch the original pfc_enable
     qosmap = config_db.get_entry("PORT_QOS_MAP", interface_name)
@@ -4592,7 +4641,10 @@ def adjust_pfc_enable(ctx, db, interface_name, pg_map, add):
         ctx.fail("Try to add empty priorities")
 
     qosmap["pfc_enable"] = pfc_enable[:-1]
-    config_db.set_entry("PORT_QOS_MAP", interface_name, qosmap)
+    try:
+        config_db.set_entry("PORT_QOS_MAP", interface_name, qosmap)
+    except ValueError as e:
+        ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
 
 #
@@ -5827,6 +5879,7 @@ def _is_shared_headroom_pool_enabled(ctx, config_db):
 
 
 def update_profile(ctx, config_db, profile_name, xon, xoff, size, dynamic_th, pool, profile_entry = None):
+    config_db = ValidatedConfigDBConnector(config_db)
     params = {}
     if profile_entry:
         params = profile_entry
@@ -5898,14 +5951,17 @@ def update_profile(ctx, config_db, profile_name, xon, xoff, size, dynamic_th, po
             else:
                 ctx.fail("No dynamic_th defined in DEFAULT_LOSSLESS_BUFFER_PARAMETER")
 
-    config_db.set_entry("BUFFER_PROFILE", (profile_name), params)
+    try:
+        config_db.set_entry("BUFFER_PROFILE", (profile_name), params)
+    except ValueError as e:
+        ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
 @profile.command('remove')
 @click.argument('profile', metavar='<profile>', required=True)
 @clicommon.pass_db
 def remove_profile(db, profile):
     """Delete a buffer profile"""
-    config_db = db.cfgdb
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     ctx = click.get_current_context()
 
     existing_pgs = config_db.get_table("BUFFER_PG")
@@ -5917,7 +5973,10 @@ def remove_profile(db, profile):
 
     entry = config_db.get_entry("BUFFER_PROFILE", profile)
     if entry:
-        config_db.set_entry("BUFFER_PROFILE", profile, None)
+        try:
+            config_db.set_entry("BUFFER_PROFILE", profile, None)
+        except JsonPatchConflict as e:
+            ctx.fail("Invalid ConfigDB. Error: {}".format(e))
     else:
         ctx.fail("Profile {} doesn't exist".format(profile))
 
@@ -5933,7 +5992,7 @@ def shared_headroom_pool(ctx):
 @clicommon.pass_db
 def over_subscribe_ratio(db, ratio):
     """Configure over subscribe ratio"""
-    config_db = db.cfgdb
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     ctx = click.get_current_context()
 
     port_number = len(config_db.get_table('PORT'))
@@ -5953,7 +6012,10 @@ def over_subscribe_ratio(db, ratio):
         else:
             v["over_subscribe_ratio"] = ratio
 
-        config_db.set_entry("DEFAULT_LOSSLESS_BUFFER_PARAMETER", k, v)
+        try:
+            config_db.set_entry("DEFAULT_LOSSLESS_BUFFER_PARAMETER", k, v)
+        except ValueError as e:
+            ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
 
 @shared_headroom_pool.command()
@@ -5961,7 +6023,7 @@ def over_subscribe_ratio(db, ratio):
 @clicommon.pass_db
 def size(db, size):
     """Configure shared headroom pool size"""
-    config_db = db.cfgdb
+    config_db = ValidatedConfigDBConnector(db.cfgdb)
     state_db = db.db
     ctx = click.get_current_context()
 
@@ -5980,7 +6042,10 @@ def size(db, size):
     else:
         ingress_lossless_pool["xoff"] = size
 
-    config_db.set_entry("BUFFER_POOL", "ingress_lossless_pool", ingress_lossless_pool)
+    try:
+        config_db.set_entry("BUFFER_POOL", "ingress_lossless_pool", ingress_lossless_pool)
+    except ValueError as e:
+        ctx.fail("Invalid ConfigDB. Error: {}".format(e))
 
 
 #
