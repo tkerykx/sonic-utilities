@@ -33,6 +33,21 @@ class TestConfigPlatformBarefoot(object):
         print("result.exit_code:", result.exit_code)
         print("result.output:", result.output)
         assert result.output == expected_output
+
+        runner = CliRunner()
+        expected_output = "Swss service will be restarted, continue? [y/N]: \nAborted!\n"
+        result = runner.invoke(bf.barefoot.commands['profile'], ['x1'])
+        print("result.exit_code:", result.exit_code)
+        print("result.output:", result.output)
+        assert result.output == expected_output
+
+        runner = CliRunner()
+        expected_output = "Swss service will be restarted, continue? [y/N]: \nAborted!\n"
+        result = runner.invoke(bf.barefoot.commands['profile'], ['y2'])
+        print("result.exit_code:", result.exit_code)
+        print("result.output:", result.output)
+        assert result.output == expected_output
+
         #mock_run_command.assert_called_with('show platform barefoot profile', display_cmd=False)
     
     def test_register(self):
