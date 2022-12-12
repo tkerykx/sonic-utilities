@@ -27,7 +27,7 @@ def profile():
     click.echo('Current profile: ', nl=False)
     subprocess.run('docker exec -it syncd readlink /opt/bfn/install | sed '
         r's/install_\\\(.\*\\\)_profile/\\1/'
-        r' | sed s/install_\\\(.\*\\\)_tofino\\\(.\*\\\)/\\1/', check=True, shell=True)
+        r' | sed s/install_\\\(.\*\\\)_tofino.\*/\\1/', check=True, shell=False)
 
     # Check if profile naming format contains tofino family information 
     output = subprocess.check_output(['docker', 'exec', '-it', 'syncd', 'ls', '/opt/bfn']).strip().decode()
@@ -47,7 +47,7 @@ def profile():
     subprocess.run('docker exec -it syncd find /opt/bfn -mindepth 1 '
         r'-maxdepth 1 -type d,l ' + opts + '| sed '
         r's%/opt/bfn/install_\\\(.\*\\\)_profile%\\1%'
-        r' | sed s%/opt/bfn/install_\\\(.\*\\\)_tofino\\\(.\*\\\)%\\1%', shell=True)
+        r' | sed s%/opt/bfn/install_\\\(.\*\\\)_tofino.\*%\\1%', shell=False)
 
 def register(cli):
     version_info = device_info.get_sonic_version_info()
