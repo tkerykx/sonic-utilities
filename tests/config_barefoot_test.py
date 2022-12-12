@@ -29,6 +29,7 @@ class TestConfigPlatformBarefoot(object):
         result = runner.invoke(bf.barefoot.commands['profile'], ['default'])
         #assert mock_run_command.call_count == 0
         #assert result.exit_code == 2
+        #assert result.exit_code == 1
         #assert result.exit_code == 0
         print("result.exit_code:", result.exit_code)
         print("result.output:", result.output)
